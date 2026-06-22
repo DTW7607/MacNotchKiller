@@ -10,6 +10,13 @@ struct FocusedWindowHandle {
     let ownerPID: pid_t
     let title: String?
 
+    func focus() {
+        NSRunningApplication(processIdentifier: ownerPID)?.activate(
+            options: [.activateIgnoringOtherApps]
+        )
+        _ = AXUIElementPerformAction(element, kAXRaiseAction as CFString)
+    }
+
     func moveToDisplay(_ displayID: CGDirectDisplayID) throws {
         let displayBounds = CGDisplayBounds(displayID)
         guard displayBounds.width > 0, displayBounds.height > 0 else {
@@ -49,10 +56,7 @@ struct FocusedWindowHandle {
 
         // 保证键盘焦点仍属于被移动的应用。CaptureWindow 不激活且忽略鼠标，
         // 后续透传窗口出现时不会抢走目标窗口的前台状态。
-        NSRunningApplication(processIdentifier: ownerPID)?.activate(
-            options: [.activateIgnoringOtherApps]
-        )
-        _ = AXUIElementPerformAction(element, kAXRaiseAction as CFString)
+        focus()
     }
 
     func enterFullScreen() throws {
@@ -114,36 +118,6 @@ struct FocusedWindowHandle {
 
 @MainActor
 enum FocusedWindowTracker {
-    /// 在指定时间内持续记录最后一个有效焦点窗口。程序自身永远不会成为候选。
-    static func latestFocusedWindow(
-        forNanoseconds duration: UInt64,
-        excludingProcessID: pid_t
-    ) async throws -> FocusedWindowHandle {
-        let pollingInterval: UInt64 = 100_000_000
-        var elapsed: UInt64 = 0
-        var latest = currentFocusedWindow(excludingProcessID: excludingProcessID)
-
-        while elapsed < duration {
-            try Task.checkCancellation()
-            if let current = currentFocusedWindow(
-                excludingProcessID: excludingProcessID
-            ) {
-                latest = current
-            }
-            let sleepDuration = min(pollingInterval, duration - elapsed)
-            try await Task.sleep(nanoseconds: sleepDuration)
-            elapsed += sleepDuration
-        }
-
-        if let current = currentFocusedWindow(excludingProcessID: excludingProcessID) {
-            latest = current
-        }
-        guard let latest else {
-            throw FocusedWindowError.noFocusedWindow
-        }
-        return latest
-    }
-
     static func currentFocusedWindow(
         excludingProcessID: pid_t
     ) -> FocusedWindowHandle? {
@@ -195,6 +169,97 @@ enum FocusedWindowTracker {
         )
     }
 
+    /// 把 WindowServer 命中的可见窗口映射到同一应用公开的 AXWindow。
+    /// CGWindowList 提供可靠的前后层级，AXWindow 则用于后续移动和原生全屏。
+    static func window(
+        ownerPID: pid_t,
+        matching targetBounds: CGRect,
+        title targetTitle: String?,
+        containing location: CGPoint
+    ) -> FocusedWindowHandle? {
+        let application = AXUIElementCreateApplication(ownerPID)
+        guard let windowsValue = copyAttribute(
+            kAXWindowsAttribute as CFString,
+            from: application
+        ), CFGetTypeID(windowsValue) == CFArrayGetTypeID(),
+        let windows = windowsValue as? [AXUIElement] else {
+            return nil
+        }
+
+        var bestMatch: (element: AXUIElement, title: String?, score: CGFloat)?
+        for window in windows {
+            if let role = copyAttribute(
+                kAXRoleAttribute as CFString,
+                from: window
+            ) as? String, role != (kAXWindowRole as String) {
+                continue
+            }
+            if let minimized = copyAttribute(
+                kAXMinimizedAttribute as CFString,
+                from: window
+            ) as? Bool, minimized {
+                continue
+            }
+            guard let bounds = bounds(of: window),
+                  bounds.insetBy(dx: -2, dy: -2).contains(location) else {
+                continue
+            }
+
+            let title = copyAttribute(
+                kAXTitleAttribute as CFString,
+                from: window
+            ) as? String
+            var score = abs(bounds.minX - targetBounds.minX) +
+                abs(bounds.minY - targetBounds.minY) +
+                abs(bounds.width - targetBounds.width) +
+                abs(bounds.height - targetBounds.height)
+            if let targetTitle, !targetTitle.isEmpty, title == targetTitle {
+                score -= 10_000
+            }
+
+            if bestMatch == nil || score < bestMatch!.score {
+                bestMatch = (window, title, score)
+            }
+        }
+
+        guard let bestMatch else { return nil }
+        return FocusedWindowHandle(
+            element: bestMatch.element,
+            ownerPID: ownerPID,
+            title: bestMatch.title
+        )
+    }
+
+    private static func bounds(of element: AXUIElement) -> CGRect? {
+        guard let positionValue = copyAttribute(
+            kAXPositionAttribute as CFString,
+            from: element
+        ), CFGetTypeID(positionValue) == AXValueGetTypeID(),
+        let sizeValue = copyAttribute(
+            kAXSizeAttribute as CFString,
+            from: element
+        ), CFGetTypeID(sizeValue) == AXValueGetTypeID() else {
+            return nil
+        }
+
+        let positionAXValue = positionValue as! AXValue
+        let sizeAXValue = sizeValue as! AXValue
+        guard AXValueGetType(positionAXValue) == .cgPoint,
+              AXValueGetType(sizeAXValue) == .cgSize else {
+            return nil
+        }
+
+        var position = CGPoint.zero
+        var size = CGSize.zero
+        guard AXValueGetValue(positionAXValue, .cgPoint, &position),
+              AXValueGetValue(sizeAXValue, .cgSize, &size),
+              size.width > 0,
+              size.height > 0 else {
+            return nil
+        }
+        return CGRect(origin: position, size: size)
+    }
+
     static func copyAttribute(
         _ attribute: CFString,
         from element: AXUIElement
@@ -213,6 +278,8 @@ enum FocusedWindowTracker {
 
 enum FocusedWindowError: LocalizedError {
     case noFocusedWindow
+    case selectionMonitorUnavailable
+    case selectionCancelled
     case invalidTargetDisplay
     case windowIsNotMovable(String?)
     case positionEncodingFailed
@@ -223,7 +290,11 @@ enum FocusedWindowError: LocalizedError {
     var errorDescription: String? {
         switch self {
         case .noFocusedWindow:
-            return "3 秒内没有检测到可移动的焦点窗口。请保持目标窗口处于前台后重新运行。"
+            return "没有选择可移动的窗口。"
+        case .selectionMonitorUnavailable:
+            return "无法启动全局窗口选择器。请确认 FullScreenTools 已获得辅助功能权限。"
+        case .selectionCancelled:
+            return "窗口选择已取消。"
         case .invalidTargetDisplay:
             return "虚拟显示器没有有效的目标坐标。"
         case let .windowIsNotMovable(title):

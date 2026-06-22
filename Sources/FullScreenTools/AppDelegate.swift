@@ -18,6 +18,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     private var windowController: CaptureWindowController?
     private var captureSession: CaptureSession?
     private var inputRouter: InputRouter?
+    private var windowSelector: WindowSelector?
     private var previousFrontmostApplication: NSRunningApplication?
     private var screenChangeTask: Task<Void, Never>?
     private var signalSources: [DispatchSourceSignal] = []
@@ -49,6 +50,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
         inputRouter?.stop()
         inputRouter = nil
+        windowSelector?.cancel()
+        windowSelector = nil
         virtualDisplayController?.destroy()
         virtualDisplayController = nil
         NSApp.presentationOptions = []
@@ -117,10 +120,14 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         }
 
         do {
+            state = .selectingWindow
+            writeStatus("请移动鼠标选择窗口；蓝色外框出现后，点击窗口确认。\n")
+            let targetWindow = try await selectWindow()
+            targetWindow.focus()
             try await startRuntime(
                 matching: profile,
                 stateWhileStarting: .launching,
-                windowToMove: nil
+                windowToMove: targetWindow
             )
         } catch {
             await fail(with: error)
@@ -134,22 +141,6 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     ) async throws {
         state = stateWhileStarting
         builtInProfile = profile
-
-        let focusedWindowTask: Task<FocusedWindowHandle, Error>?
-        if stateWhileStarting == .launching {
-            state = .selectingWindow
-            writeStatus("请在 3 秒内将需要移入虚拟屏的窗口置于焦点。\n")
-            let processID = pid_t(ProcessInfo.processInfo.processIdentifier)
-            focusedWindowTask = Task { @MainActor in
-                try await FocusedWindowTracker.latestFocusedWindow(
-                    forNanoseconds: 3_000_000_000,
-                    excludingProcessID: processID
-                )
-            }
-        } else {
-            focusedWindowTask = nil
-        }
-        defer { focusedWindowTask?.cancel() }
 
         guard let builtInScreen = profile.screen else {
             throw CaptureSessionError.displayUnavailable
@@ -171,9 +162,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         virtualDisplayController = virtualController
 
         try virtualController.create(matching: profile)
-        try virtualController.positionAtIsolatedCorner(
-            ofAllDisplaysAligningWith: profile.displayID
-        )
+        // CGVirtualDisplay 构造完成时，显示器 ID 已存在，但 WindowServer
+        // 可能尚未允许该显示器参与布局。必须先等待 Online、Active、
+        // NSScreen 注册和显示模式确认完成，否则排列会返回 1001
+        //（kCGErrorIllegalArgument）。
         _ = try await virtualController.waitUntilReady(matching: profile)
         try virtualController.positionAtIsolatedCorner(
             ofAllDisplaysAligningWith: profile.displayID
@@ -183,14 +175,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             throw VirtualDisplayError.creationFailed("虚拟显示器没有有效 ID。")
         }
 
-        let targetWindow: FocusedWindowHandle?
-        if let focusedWindowTask {
-            targetWindow = try await focusedWindowTask.value
-        } else {
-            targetWindow = windowToMove
-        }
-
-        if let targetWindow {
+        if let targetWindow = windowToMove {
             try targetWindow.moveToDisplay(virtualDisplayID)
             try targetWindow.enterFullScreen()
             // 原生全屏会创建/切换 Space。等待窗口完成过渡后再显示透传层，
@@ -224,6 +209,27 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         inputRouter = router
 
         state = .running
+    }
+
+    private func selectWindow() async throws -> FocusedWindowHandle {
+        try await withCheckedThrowingContinuation { continuation in
+            let selector = WindowSelector(
+                excludingProcessID: pid_t(ProcessInfo.processInfo.processIdentifier)
+            )
+            windowSelector = selector
+
+            do {
+                try selector.start { [weak self, weak selector] result in
+                    if let self, self.windowSelector === selector {
+                        self.windowSelector = nil
+                    }
+                    continuation.resume(with: result)
+                }
+            } catch {
+                windowSelector = nil
+                continuation.resume(throwing: error)
+            }
+        }
     }
 
     private func startCapture(displayID: CGDirectDisplayID) async throws {
@@ -304,6 +310,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
         inputRouter?.stop()
         inputRouter = nil
+        windowSelector?.cancel()
+        windowSelector = nil
         await captureSession?.stop()
         captureSession = nil
         windowController?.captureView.resetImage()
@@ -338,6 +346,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
         inputRouter?.stop()
         inputRouter = nil
+        windowSelector?.cancel()
+        windowSelector = nil
         await captureSession?.stop()
         captureSession = nil
         windowController?.close()
@@ -382,6 +392,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             state = .quitting
             inputRouter?.stop()
             inputRouter = nil
+            windowSelector?.cancel()
+            windowSelector = nil
             windowController?.window?.orderOut(nil)
             NSApp.presentationOptions = []
             virtualDisplayController?.destroy()
