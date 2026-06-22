@@ -2,6 +2,12 @@ import ApplicationServices
 import CoreGraphics
 import Foundation
 
+private enum DockEdge {
+    case left
+    case right
+    case bottom
+}
+
 protocol InputRouterDelegate: AnyObject {
     func inputRouterRequestedExit(_ router: InputRouter)
     func inputRouter(_ router: InputRouter, didFailWith message: String)
@@ -10,7 +16,7 @@ protocol InputRouterDelegate: AnyObject {
 /// 输入安全层。
 ///
 /// 正常鼠标移动完全交给 WindowServer。虚拟屏与物理屏在显示器坐标空间中
-/// 不相邻，因此 WindowServer 会在虚拟屏边缘原生限制光标。本类不再累计
+/// 只有角点接触、没有可穿越的共享边，因此系统会在虚拟屏边缘原生限制光标。本类不再累计
 /// delta、改写坐标或在边缘反复 warp，只负责：
 /// 1. 启动/退出时移动光标；
 /// 2. 拦截退出快捷键和系统栏快捷键；
@@ -24,9 +30,12 @@ final class InputRouter {
     private var virtualBounds: CGRect = .zero
     private var originalCursorLocation: CGPoint?
     private var lastSafeLocalLocation: CGPoint?
+    private var dockEdge: DockEdge = .bottom
+    private var suppressedMouseButtons: Set<Int64> = []
     private var exitKeyIsDown = false
     private var failureWasReported = false
     private let initialEdgeInset: CGFloat = 8
+    private let dockTriggerInset: CGFloat = 4
 
     static func requestAccessibilityPermission() -> Bool {
         let promptKey = kAXTrustedCheckOptionPrompt.takeUnretainedValue() as String
@@ -45,6 +54,7 @@ final class InputRouter {
 
         self.virtualDisplayID = virtualDisplayID
         virtualBounds = newVirtualBounds
+        dockEdge = Self.currentDockEdge()
         originalCursorLocation = CGEvent(source: nil)?.location
 
         let mask = Self.eventMask(for: [
@@ -122,6 +132,7 @@ final class InputRouter {
 
         virtualDisplayID = displayID
         virtualBounds = newBounds
+        dockEdge = Self.currentDockEdge()
 
         if let currentLocation = CGEvent(source: nil)?.location,
            contains(currentLocation) {
@@ -206,11 +217,12 @@ final class InputRouter {
                 return nil
             }
 
-            let focusesMenuOrDock = event.flags.contains(.maskControl) &&
-                (keyCode == 120 || keyCode == 99)
+            // Control+F3 聚焦 Dock；Command+Option+D 切换 Dock。菜单栏的
+            // Control+F2 不再拦截，保持虚拟屏菜单栏的系统默认行为。
+            let focusesDock = event.flags.contains(.maskControl) && keyCode == 99
             let togglesDock = keyCode == 2 &&
                 relevantFlags == [.maskAlternate, .maskCommand]
-            if focusesMenuOrDock || togglesDock {
+            if focusesDock || togglesDock {
                 return nil
             }
         }
@@ -228,16 +240,48 @@ final class InputRouter {
                 recoverCursor()
                 return nil
             }
+            // 只钳制垂直于 Dock 的坐标，保留平行方向的连续位移。这样既不
+            // 触发 Dock，光标沿屏幕底边/侧边移动时也不会因整条事件被丢弃而卡顿。
+            if isInsideDockTrigger(event.location) {
+                event.location = locationOutsideDockTrigger(event.location)
+            }
             lastSafeLocalLocation = localLocation(for: event.location)
 
-        case .leftMouseDown, .leftMouseUp,
-             .rightMouseDown, .rightMouseUp,
-             .otherMouseDown, .otherMouseUp,
-             .scrollWheel:
+        case .leftMouseDown, .rightMouseDown, .otherMouseDown:
+            let button = mouseButtonNumber(for: type, event: event)
             guard contains(event.location) else {
-                // 失败关闭：越界按键和滚轮绝不投递到其他显示器。
+                suppressedMouseButtons.insert(button)
                 recoverCursor()
                 return nil
+            }
+            if isInsideDockTrigger(event.location) {
+                event.location = locationOutsideDockTrigger(event.location)
+            }
+            lastSafeLocalLocation = localLocation(for: event.location)
+
+        case .leftMouseUp, .rightMouseUp, .otherMouseUp:
+            let button = mouseButtonNumber(for: type, event: event)
+            if suppressedMouseButtons.remove(button) != nil {
+                return nil
+            }
+            // 如果按下起点在应用内，释放事件必须继续投递，即使拖拽期间进入
+            // Dock 触发区，否则目标应用会永久停留在按下/拖拽状态。
+            guard contains(event.location) else {
+                recoverCursor()
+                return nil
+            }
+            if isInsideDockTrigger(event.location) {
+                event.location = locationOutsideDockTrigger(event.location)
+            }
+            lastSafeLocalLocation = localLocation(for: event.location)
+
+        case .scrollWheel:
+            guard contains(event.location) else {
+                recoverCursor()
+                return nil
+            }
+            if isInsideDockTrigger(event.location) {
+                event.location = locationOutsideDockTrigger(event.location)
             }
             lastSafeLocalLocation = localLocation(for: event.location)
 
@@ -301,6 +345,47 @@ final class InputRouter {
         )
     }
 
+    private func isInsideDockTrigger(_ globalLocation: CGPoint) -> Bool {
+        guard contains(globalLocation) else {
+            return false
+        }
+        switch dockEdge {
+        case .left:
+            return globalLocation.x < virtualBounds.minX + dockTriggerInset
+        case .right:
+            return globalLocation.x >= virtualBounds.maxX - dockTriggerInset
+        case .bottom:
+            return globalLocation.y >= virtualBounds.maxY - dockTriggerInset
+        }
+    }
+
+    private func locationOutsideDockTrigger(_ location: CGPoint) -> CGPoint {
+        var result = location
+        switch dockEdge {
+        case .left:
+            result.x = virtualBounds.minX + dockTriggerInset
+        case .right:
+            result.x = virtualBounds.maxX - dockTriggerInset
+        case .bottom:
+            result.y = virtualBounds.maxY - dockTriggerInset
+        }
+        return result
+    }
+
+    private func mouseButtonNumber(
+        for type: CGEventType,
+        event: CGEvent
+    ) -> Int64 {
+        switch type {
+        case .leftMouseDown, .leftMouseUp:
+            return 0
+        case .rightMouseDown, .rightMouseUp:
+            return 1
+        default:
+            return event.getIntegerValueField(.mouseEventButtonNumber)
+        }
+    }
+
     private func clampLocal(_ point: CGPoint, inset: CGFloat) -> CGPoint {
         let maximumX = max(inset, virtualBounds.width - inset)
         let maximumY = max(inset, virtualBounds.height - inset)
@@ -324,6 +409,8 @@ final class InputRouter {
         virtualBounds = .zero
         originalCursorLocation = nil
         lastSafeLocalLocation = nil
+        dockEdge = .bottom
+        suppressedMouseButtons.removeAll()
         exitKeyIsDown = false
         failureWasReported = false
     }
@@ -347,6 +434,19 @@ final class InputRouter {
         .otherMouseUp,
         .scrollWheel
     ]
+
+    private static func currentDockEdge() -> DockEdge {
+        let orientation = UserDefaults.standard
+            .persistentDomain(forName: "com.apple.dock")?["orientation"] as? String
+        switch orientation {
+        case "left":
+            return .left
+        case "right":
+            return .right
+        default:
+            return .bottom
+        }
+    }
 }
 
 enum InputRouterError: LocalizedError {

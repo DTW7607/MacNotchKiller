@@ -25,7 +25,13 @@ let package = Package(
         ),
         .executableTarget(
             name: "FullScreenTools",
-            dependencies: ["VirtualDisplayBridge"]
+            dependencies: ["VirtualDisplayBridge"],
+            linkerSettings: [
+                .linkedFramework("CoreGraphics"),
+                .linkedFramework("IOSurface"),
+                .linkedFramework("Metal"),
+                .linkedFramework("QuartzCore")
+            ]
         )
     ],
     swiftLanguageModes: [.v5]

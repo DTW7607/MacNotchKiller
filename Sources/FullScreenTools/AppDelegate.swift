@@ -6,6 +6,7 @@ import Darwin
 final class AppDelegate: NSObject, NSApplicationDelegate {
     private enum LifecycleState {
         case launching
+        case selectingWindow
         case running
         case rebuilding
         case quitting
@@ -29,7 +30,6 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
         configureMainMenu()
         configureSignalHandlers()
-        NSApp.activate(ignoringOtherApps: true)
 
         NotificationCenter.default.addObserver(
             self,
@@ -100,14 +100,6 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             return
         }
 
-        guard ensureScreenCapturePermission() else {
-            showErrorAndTerminate(
-                title: "需要屏幕录制权限",
-                message: "请在“系统设置 → 隐私与安全性 → 屏幕与系统音频录制”中允许终端或 FullScreenTools，然后重新运行程序。"
-            )
-            return
-        }
-
         guard InputRouter.requestAccessibilityPermission() else {
             showErrorAndTerminate(
                 title: "需要辅助功能权限",
@@ -125,25 +117,39 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         }
 
         do {
-            try await startRuntime(matching: profile, stateWhileStarting: .launching)
+            try await startRuntime(
+                matching: profile,
+                stateWhileStarting: .launching,
+                windowToMove: nil
+            )
         } catch {
             await fail(with: error)
         }
     }
 
-    private func ensureScreenCapturePermission() -> Bool {
-        if CGPreflightScreenCaptureAccess() {
-            return true
-        }
-        return CGRequestScreenCaptureAccess()
-    }
-
     private func startRuntime(
         matching profile: DisplayProfile,
-        stateWhileStarting: LifecycleState
+        stateWhileStarting: LifecycleState,
+        windowToMove: FocusedWindowHandle?
     ) async throws {
         state = stateWhileStarting
         builtInProfile = profile
+
+        let focusedWindowTask: Task<FocusedWindowHandle, Error>?
+        if stateWhileStarting == .launching {
+            state = .selectingWindow
+            writeStatus("请在 3 秒内将需要移入虚拟屏的窗口置于焦点。\n")
+            let processID = pid_t(ProcessInfo.processInfo.processIdentifier)
+            focusedWindowTask = Task { @MainActor in
+                try await FocusedWindowTracker.latestFocusedWindow(
+                    forNanoseconds: 3_000_000_000,
+                    excludingProcessID: processID
+                )
+            }
+        } else {
+            focusedWindowTask = nil
+        }
+        defer { focusedWindowTask?.cancel() }
 
         guard let builtInScreen = profile.screen else {
             throw CaptureSessionError.displayUnavailable
@@ -177,6 +183,23 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             throw VirtualDisplayError.creationFailed("虚拟显示器没有有效 ID。")
         }
 
+        let targetWindow: FocusedWindowHandle?
+        if let focusedWindowTask {
+            targetWindow = try await focusedWindowTask.value
+        } else {
+            targetWindow = windowToMove
+        }
+
+        if let targetWindow {
+            try targetWindow.moveToDisplay(virtualDisplayID)
+            try targetWindow.enterFullScreen()
+            // 原生全屏会创建/切换 Space。等待窗口完成过渡后再显示透传层，
+            // 避免用户看到目标窗口在虚拟屏上的中间动画状态。
+            try await Task.sleep(nanoseconds: 800_000_000)
+        } else if stateWhileStarting == .launching {
+            throw FocusedWindowError.noFocusedWindow
+        }
+
         let controller: CaptureWindowController
         if let existingController = windowController {
             controller = existingController
@@ -185,7 +208,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             windowController = controller
         }
 
-        NSApp.presentationOptions = [.hideMenuBar, .hideDock]
+        // 菜单栏保持系统默认行为；仅对本程序请求隐藏 Dock。目标窗口进入
+        // 原生全屏后 Dock 会先由系统隐藏，InputRouter 再阻断所有常用唤出路径。
+        NSApp.presentationOptions = [.hideDock]
         controller.show(on: builtInScreen)
 
         try await startCapture(displayID: virtualDisplayID)
@@ -202,11 +227,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     }
 
     private func startCapture(displayID: CGDirectDisplayID) async throws {
-        guard
-            let window = windowController?.window,
-            let displayLayer = windowController?.captureView.displayLayer
-        else {
-            throw CaptureSessionError.selfExclusionUnavailable
+        guard let captureView = windowController?.captureView else {
+            throw CaptureSessionError.renderTargetUnavailable
         }
 
         if let oldSession = captureSession {
@@ -219,8 +241,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         captureSession = session
         try await session.start(
             displayID: displayID,
-            excluding: window,
-            renderingOn: displayLayer
+            renderingOn: captureView
         )
     }
 
@@ -276,6 +297,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
     private func rebuildRuntime(matching profile: DisplayProfile) async {
         guard state == .running else { return }
+        let focusedWindow = FocusedWindowTracker.currentFocusedWindow(
+            excludingProcessID: pid_t(ProcessInfo.processInfo.processIdentifier)
+        )
         state = .rebuilding
 
         inputRouter?.stop()
@@ -287,10 +311,19 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         virtualDisplayController = nil
 
         do {
-            try await startRuntime(matching: profile, stateWhileStarting: .rebuilding)
+            try await startRuntime(
+                matching: profile,
+                stateWhileStarting: .rebuilding,
+                windowToMove: focusedWindow
+            )
         } catch {
             await fail(with: error)
         }
+    }
+
+    private func writeStatus(_ text: String) {
+        guard let data = text.data(using: .utf8) else { return }
+        try? FileHandle.standardError.write(contentsOf: data)
     }
 
     @objc

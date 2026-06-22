@@ -1,6 +1,5 @@
 import AppKit
 import CoreGraphics
-import ScreenCaptureKit
 import VirtualDisplayBridge
 
 enum VirtualDisplayError: LocalizedError {
@@ -80,20 +79,9 @@ final class VirtualDisplayController {
 
         while elapsed < timeoutNanoseconds {
             if CGDisplayIsOnline(displayID) != 0, CGDisplayIsActive(displayID) != 0 {
-                do {
-                    let content = try await SCShareableContent.excludingDesktopWindows(
-                        false,
-                        onScreenWindowsOnly: false
-                    )
-                    if content.displays.contains(where: { $0.displayID == displayID }) {
-                        let screen = NSScreen.screens.first(where: { $0.displayID == displayID })
-                        try await selectAndValidateMode(profile: profile, screen: screen)
-                        return screen
-                    }
-                } catch let error as VirtualDisplayError {
-                    throw error
-                } catch {
-                    // WindowServer 仍在注册显示器时，继续等待。
+                if let screen = NSScreen.screens.first(where: { $0.displayID == displayID }) {
+                    try await selectAndValidateMode(profile: profile, screen: screen)
+                    return screen
                 }
             }
 

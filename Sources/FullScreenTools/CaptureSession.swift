@@ -1,8 +1,6 @@
 import AppKit
-import AVFoundation
-import CoreMedia
-import CoreVideo
-import ScreenCaptureKit
+import CoreGraphics
+import VirtualDisplayBridge
 
 protocol CaptureSessionDelegate: AnyObject {
     func captureSession(_ session: CaptureSession, didStopWith error: Error)
@@ -10,113 +8,114 @@ protocol CaptureSessionDelegate: AnyObject {
 
 enum CaptureSessionError: LocalizedError {
     case displayUnavailable
-    case selfExclusionUnavailable
+    case renderTargetUnavailable
+    case directStreamUnsupported
+    case directStreamStopped
 
     var errorDescription: String? {
         switch self {
         case .displayUnavailable:
-            return "所选显示器已不可用。"
-        case .selfExclusionUnavailable:
-            return "无法识别本程序的窗口，已停止捕获以避免产生递归画面。"
+            return "虚拟显示器已不可用。"
+        case .renderTargetUnavailable:
+            return "用于显示虚拟屏画面的 Metal 输出层不可用。"
+        case .directStreamUnsupported:
+            return "当前 macOS 已移除 CGDisplayStream 运行时接口，无法直接读取虚拟显示器的 IOSurface。"
+        case .directStreamStopped:
+            return "WindowServer 已停止虚拟显示器的直接 IOSurface 流。"
         }
     }
 }
 
+/// 按虚拟显示器 ID 直接接收 WindowServer 的 IOSurface。
+///
+/// 这里不枚举窗口、不排除进程，也不使用 ScreenCaptureKit。透传窗口位于
+/// 内置屏，因此它本来就不会出现在虚拟显示器的合成结果中。
 final class CaptureSession: NSObject {
     weak var delegate: CaptureSessionDelegate?
 
     private let outputQueue = DispatchQueue(
-        label: "FullScreenTools.capture-output",
+        label: "FullScreenTools.display-surface",
         qos: .userInteractive
     )
-    private weak var displayLayer: AVSampleBufferDisplayLayer?
-    private var stream: SCStream?
+    private weak var captureView: CaptureView?
+    private var stream: FSTDisplayStream?
     private let stateLock = NSLock()
     private var expectedStop = false
 
     @MainActor
     func start(
         displayID: CGDirectDisplayID,
-        excluding window: NSWindow,
-        renderingOn displayLayer: AVSampleBufferDisplayLayer
+        renderingOn captureView: CaptureView
     ) async throws {
-        let content = try await SCShareableContent.excludingDesktopWindows(
-            false,
-            onScreenWindowsOnly: false
-        )
-
-        guard let display = content.displays.first(where: { $0.displayID == displayID }) else {
+        guard CGDisplayIsOnline(displayID) != 0,
+              CGDisplayIsActive(displayID) != 0 else {
             throw CaptureSessionError.displayUnavailable
         }
+        guard FSTDisplayStream.isSupported else {
+            throw CaptureSessionError.directStreamUnsupported
+        }
 
-        let pixelDimensions = capturePixelDimensions(
+        let bounds = CGDisplayBounds(displayID)
+        let screen = NSScreen.screens.first(where: { $0.displayID == displayID })
+        let dimensions = capturePixelDimensions(
             displayID: displayID,
-            logicalWidth: display.width,
-            logicalHeight: display.height,
-            fallbackScale: window.screen?.backingScaleFactor ?? 1
+            logicalWidth: max(1, Int(bounds.width.rounded())),
+            logicalHeight: max(1, Int(bounds.height.rounded())),
+            fallbackScale: screen?.backingScaleFactor ?? 2
         )
-
-        let processID = pid_t(ProcessInfo.processInfo.processIdentifier)
-        // 不能排除整个 com.apple.dock：Dock 进程还负责桌面/Space 背景层。
-        // 虚拟屏上没有普通窗口时，排除它会让捕获结果只剩黑色。
-        let excludedApplications = content.applications.filter { application in
-            application.processID == processID
-        }
-        let filter = SCContentFilter(
-            display: display,
-            excludingApplications: excludedApplications,
-            exceptingWindows: []
-        )
-        if #available(macOS 14.2, *) {
-            filter.includeMenuBar = false
-        }
-
-        let configuration = SCStreamConfiguration()
-        configuration.width = pixelDimensions.width
-        configuration.height = pixelDimensions.height
         let detectedRefreshRate = CGDisplayCopyDisplayMode(displayID)?.refreshRate ?? 0
-        let captureFrameRate: Int32 = detectedRefreshRate >= 30
-            ? max(30, min(120, Int32(detectedRefreshRate.rounded())))
+        let refreshRate = detectedRefreshRate >= 30
+            ? min(120, detectedRefreshRate)
             : 60
-        configuration.minimumFrameInterval = CMTime(value: 1, timescale: captureFrameRate)
-        configuration.pixelFormat = kCVPixelFormatType_32BGRA
-        configuration.scalesToFit = true
-        configuration.showsCursor = true
-        configuration.queueDepth = 3
-        configuration.capturesAudio = false
 
-        // backgroundColor 在 ScreenCaptureKit 中是非持有的 CGColorRef。这里保留
-        // 系统默认值，避免临时 CGColor 在配置被复制前释放。窗口和显示层负责黑底。
-
-        self.displayLayer = displayLayer
+        self.captureView = captureView
         setExpectedStop(false)
 
-        let stream = SCStream(
-            filter: filter,
-            configuration: configuration,
-            delegate: self
-        )
-        try stream.addStreamOutput(
-            self,
-            type: .screen,
-            sampleHandlerQueue: outputQueue
-        )
+        let stream = try FSTDisplayStream(
+            displayID: displayID,
+            outputWidth: dimensions.width,
+            outputHeight: dimensions.height,
+            refreshRate: refreshRate,
+            queue: outputQueue
+        ) { [weak self] status, _, surface in
+            guard let self else { return }
+
+            switch status {
+            case .complete:
+                guard let surface, let captureView = self.captureView else { return }
+                captureView.render(surface: surface)
+            case .stopped:
+                guard !self.isExpectedStop() else { return }
+                DispatchQueue.main.async { [weak self] in
+                    guard let self else { return }
+                    self.delegate?.captureSession(
+                        self,
+                        didStopWith: CaptureSessionError.directStreamStopped
+                    )
+                }
+            case .idle, .blank:
+                break
+            @unknown default:
+                break
+            }
+        }
 
         self.stream = stream
-        try await stream.startCapture()
+        do {
+            try stream.start()
+        } catch {
+            self.stream = nil
+            throw error
+        }
     }
 
     @MainActor
     func stop() async {
         guard let stream else { return }
-
         setExpectedStop(true)
-        do {
-            try await stream.stopCapture()
-        } catch {
-            // 退出或重建捕获期间，即使流已由系统停止，也继续清理本地状态。
-        }
+        stream.stop()
         self.stream = nil
+        captureView = nil
     }
 
     private func setExpectedStop(_ value: Bool) {
@@ -130,39 +129,5 @@ final class CaptureSession: NSObject {
         let value = expectedStop
         stateLock.unlock()
         return value
-    }
-}
-
-extension CaptureSession: SCStreamOutput {
-    func stream(
-        _ stream: SCStream,
-        didOutputSampleBuffer sampleBuffer: CMSampleBuffer,
-        of outputType: SCStreamOutputType
-    ) {
-        guard
-            outputType == .screen,
-            CMSampleBufferIsValid(sampleBuffer),
-            CMSampleBufferDataIsReady(sampleBuffer),
-            CMSampleBufferGetImageBuffer(sampleBuffer) != nil,
-            let displayLayer
-        else {
-            return
-        }
-
-        if displayLayer.status == .failed {
-            displayLayer.flush()
-        }
-        displayLayer.enqueue(sampleBuffer)
-    }
-}
-
-extension CaptureSession: SCStreamDelegate {
-    func stream(_ stream: SCStream, didStopWithError error: Error) {
-        guard !isExpectedStop() else { return }
-
-        DispatchQueue.main.async { [weak self] in
-            guard let self else { return }
-            self.delegate?.captureSession(self, didStopWith: error)
-        }
     }
 }
