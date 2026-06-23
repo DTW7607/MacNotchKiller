@@ -8,7 +8,7 @@
 
 ![macOS 13+](https://img.shields.io/badge/macOS-13%2B-111111?logo=apple)
 ![Apple Silicon](https://img.shields.io/badge/Apple%20Silicon-required-111111)
-![Swift 6](https://img.shields.io/badge/Swift-6-F05138?logo=swift&logoColor=white)
+![Swift 5.10+](https://img.shields.io/badge/Swift-5.10%2B-F05138?logo=swift&logoColor=white)
 ![Status](https://img.shields.io/badge/status-experimental-blue)
 
 </div>
@@ -50,7 +50,7 @@ flowchart LR
 
 - 带刘海的 Apple Silicon MacBook
 - macOS 13 或更高版本
-- Swift 6 工具链（从源码构建）
+- Swift 5.10 或更高版本工具链（从源码构建）
 - 为运行程序的终端或应用授予“辅助功能”权限
 
 当前主要验证环境为 macOS 26.5.1。其他系统版本可能因为私有 API 行为变化而无法运行。

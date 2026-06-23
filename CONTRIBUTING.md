@@ -6,7 +6,7 @@
 
 - macOS 13 或更高版本
 - Apple Silicon Mac
-- Swift 6 工具链
+- Swift 5.10 或更高版本工具链
 
 ```bash
 git clone https://github.com/DTW7607/FullScreenTools.git
