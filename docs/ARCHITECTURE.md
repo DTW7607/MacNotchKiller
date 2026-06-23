@@ -1,81 +1,83 @@
-# 架构说明
+# Architecture
 
-## 目标
+[简体中文](ARCHITECTURE.zh-CN.md)
 
-MacNotchKiller 的目标不是重新实现目标应用，而是在不修改目标应用的前提下，让其原生全屏画面使用带刘海 MacBook 的整块内置面板。
+## Goal
 
-核心约束：
+MacNotchKiller does not reimplement the target application. Its goal is to let the target app's own native fullscreen surface use the full built-in panel on a notched MacBook, without modifying the target app.
 
-- 目标应用仍然拥有窗口和输入焦点。
-- 画面链路不进行视频编码。
-- 正常鼠标移动由 WindowServer 处理。
-- 任意失败都必须能够停止输入拦截并销毁虚拟显示器。
+Core constraints:
 
-## 启动流程
+- The target app keeps ownership of the window and input focus.
+- The image path does not perform video encoding.
+- Normal mouse movement remains handled by WindowServer.
+- Any failure must be able to stop input interception and destroy the virtual display.
 
-1. 检查 `CGVirtualDisplay` 运行时能力和辅助功能权限。
-2. `WindowSelector` 按 WindowServer 层级命中鼠标下方窗口，并用蓝色边框显示候选。
-3. 点击确认后，将 CG 窗口映射为对应的 Accessibility 窗口。
-4. `VirtualDisplayController` 创建与内置屏尺寸匹配的虚拟显示器。
-5. 等待显示器进入 Online、Active 状态并出现在 `NSScreen.screens`。
-6. 将虚拟屏排列到物理显示器联合区域的隔离角点。
-7. 移动目标窗口并触发 macOS 原生全屏。
-8. `CaptureSession` 按虚拟显示器 ID 启动 `CGDisplayStream`。
-9. `CaptureWindowController` 在内置屏显示 Metal 透传层。
-10. `InputRouter` 将光标放入虚拟屏并建立输入安全边界。
+## Startup flow
 
-## 模块职责
+1. Check `CGVirtualDisplay` runtime availability and Accessibility permission.
+2. `WindowSelector` hit-tests the window under the mouse using WindowServer ordering and shows the candidate with a blue outline.
+3. After click confirmation, map the CoreGraphics window to the corresponding Accessibility window.
+4. `VirtualDisplayController` creates a virtual display matching the built-in panel.
+5. Wait until the display is Online, Active, and visible through `NSScreen.screens`.
+6. Arrange the virtual display at an isolated corner outside the physical display union.
+7. Move the target window and trigger macOS native fullscreen.
+8. `CaptureSession` starts `CGDisplayStream` for the virtual display ID.
+9. `CaptureWindowController` shows the Metal pass-through layer on the built-in display.
+10. `InputRouter` places the cursor inside the virtual display and installs the input safety boundary.
 
-| 模块 | 职责 |
+## Module responsibilities
+
+| Module | Responsibility |
 | --- | --- |
-| `AppDelegate` | 生命周期、状态机、资源创建和失败清理 |
-| `WindowSelector` | 悬停命中、蓝色边框、点击确认 |
-| `FocusedWindowTracker` | Accessibility 窗口匹配、移动和原生全屏 |
-| `VirtualDisplayController` | 虚拟显示器创建、模式验证、布局和销毁 |
-| `CaptureSession` | `CGDisplayStream` 生命周期和帧回调 |
-| `CaptureWindowController` | 内置屏置顶窗口和 Metal 渲染目标 |
-| `InputRouter` | Event Tap、光标恢复、Dock 边界和退出快捷键 |
-| `VirtualDisplayBridge` | Objective-C 私有运行时桥接和 C 显示流封装 |
+| `AppDelegate` | Lifecycle, state machine, resource creation, and failure cleanup |
+| `WindowSelector` | Hover hit-testing, blue outline, click confirmation |
+| `FocusedWindowTracker` | Accessibility window matching, movement, and native fullscreen |
+| `VirtualDisplayController` | Virtual display creation, mode validation, layout, and teardown |
+| `CaptureSession` | `CGDisplayStream` lifecycle and frame callbacks |
+| `CaptureWindowController` | Built-in-screen overlay window and Metal render target |
+| `InputRouter` | Event Tap, cursor restoration, Dock boundary, and recovery shortcut |
+| `VirtualDisplayBridge` | Objective-C private runtime bridge and C display-stream wrapper |
 
-## 画面数据路径
+## Image data path
 
 ```text
-目标应用
-  → WindowServer 在虚拟显示器上合成
-  → CGDisplayStream 回调 IOSurface
-  → Metal 纹理映射
-  → Blit 到 CAMetalLayer drawable
-  → 内置显示器
+Target app
+  → WindowServer composites on the virtual display
+  → CGDisplayStream callback provides an IOSurface
+  → Metal maps the IOSurface as a texture
+  → Blit into the CAMetalLayer drawable
+  → Built-in display
 ```
 
-`IOSurface` 在 GPU 命令完成前通过使用计数保持有效，避免 WindowServer 过早复用缓冲区。
+The `IOSurface` is kept alive through a use count until GPU commands complete, preventing WindowServer from reusing the buffer too early.
 
-## 坐标域
+## Coordinate domains
 
-项目同时处理三类坐标：
+The project handles three coordinate domains:
 
-- CoreGraphics 显示器全局坐标：左上原点。
-- Accessibility 窗口坐标：与 CoreGraphics 显示空间一致。
-- AppKit 屏幕与窗口坐标：左下原点。
+- CoreGraphics global display coordinates: top-left origin.
+- Accessibility window coordinates: aligned with the CoreGraphics display space.
+- AppKit screen and window coordinates: bottom-left origin.
 
-窗口选择边框显示前必须完成 CoreGraphics 到 AppKit 的纵轴转换。输入路由则始终使用 CoreGraphics 全局坐标，避免多屏排列时混用坐标域。
+The window-selection outline must convert the vertical axis from CoreGraphics to AppKit before display. Input routing always uses CoreGraphics global coordinates to avoid mixing coordinate domains in multi-display layouts.
 
-## 失败处理
+## Failure handling
 
-启动和运行阶段都遵循同一清理顺序：
+Startup and runtime failures use the same cleanup order:
 
-1. 停止 Event Tap 和输入限制。
-2. 停止显示流并释放帧回调。
-3. 关闭透传窗口。
-4. 恢复 AppKit presentation options。
-5. 销毁虚拟显示器。
-6. 恢复原前台应用和光标位置。
+1. Stop Event Tap and input restrictions.
+2. Stop the display stream and release frame callbacks.
+3. Close the pass-through window.
+4. Restore AppKit presentation options.
+5. Destroy the virtual display.
+6. Restore the previous frontmost app and cursor position.
 
-## API 风险
+## API risks
 
-- `CGVirtualDisplay` 没有公开稳定性保证。
-- `CGDisplayStream` 已被 Apple 标记为 obsolete。
-- Accessibility 能力由目标应用实现决定。
-- WindowServer 的显示器吸附、Space 和 Dock 行为可能随系统更新变化。
+- `CGVirtualDisplay` has no public stability guarantee.
+- `CGDisplayStream` has been marked obsolete by Apple.
+- Accessibility behavior depends on the target app's implementation.
+- WindowServer behavior around display snapping, Spaces, and the Dock may change across macOS versions.
 
-涉及这些边界的改动必须在真实带刘海设备上验证；仅通过编译不能证明运行时兼容。
+Changes around these boundaries must be validated on real notched hardware. A successful compile does not prove runtime compatibility.

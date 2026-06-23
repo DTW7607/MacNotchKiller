@@ -2,9 +2,11 @@
 
 # MacNotchKiller
 
-**让带刘海的 MacBook 真正用满整块屏幕。**
+**True fullscreen for notched MacBook displays.**
 
-一个面向带刘海 MacBook 的实验性全屏工具：把选中的应用迁移到隔离虚拟屏，并将完整画面低延迟透传回内置屏幕，让观影、虚拟机和其他全屏应用能够真正用满刘海两侧区域。
+An experimental macOS fullscreen tool for notched MacBooks. It moves the selected app into an isolated virtual display, streams the full composed image back to the built-in panel with low latency, and lets video players, virtual machines, and other fullscreen apps use the pixels beside the notch.
+
+[简体中文](README.zh-CN.md)
 
 ![macOS 13+](https://img.shields.io/badge/macOS-13%2B-111111?logo=apple)
 ![Apple Silicon](https://img.shields.io/badge/Apple%20Silicon-required-111111)
@@ -13,49 +15,49 @@
 
 </div>
 
-![Parallels Desktop 虚拟机使用 MacNotchKiller 后占满刘海屏](docs/images/parallels-desktop-fullscreen.jpg)
+![Parallels Desktop running fullscreen through MacNotchKiller](docs/images/parallels-desktop-fullscreen.jpg)
 
-<p align="center"><em>Parallels Desktop 虚拟机全屏示例：Windows 桌面延伸至刘海两侧，不再整体下移。</em></p>
+<p align="center"><em>Parallels Desktop fullscreen example: the Windows desktop extends into both sides of the notch instead of being shifted downward.</em></p>
 
-## 为什么需要它
+## Why it exists
 
-macOS 会为内置摄像头区域保留安全空间。部分播放器、虚拟机和图形应用进入系统全屏后，内容仍会避开刘海所在的顶部区域，导致两侧像素无法参与显示。
+macOS reserves a safe area around the built-in camera housing. Some video players, virtual machines, and graphics apps still avoid the notch area when entering system fullscreen, leaving the pixels beside the notch unused.
 
-MacNotchKiller 不修改目标应用。它创建一个与内置 Retina 屏匹配的虚拟显示器，让目标窗口在虚拟屏上进入原生全屏，再把虚拟屏的完整合成画面显示到内置屏上。这样既保留目标应用原有的全屏布局和键鼠行为，也能使用刘海两侧区域。
+MacNotchKiller does not modify the target app. It creates a virtual display that matches the built-in Retina panel, moves the target window there, asks it to enter native fullscreen, and mirrors the complete virtual display image back onto the built-in screen. This preserves the target app's own fullscreen layout and input behavior while using the notch-side pixels.
 
-## 主要能力
+## Features
 
-- **主动选择窗口**：鼠标悬停时显示蓝色外框，点击确认目标窗口。
-- **原生全屏迁移**：将目标窗口移动到虚拟显示器并触发 macOS 原生全屏。
-- **Retina 尺寸匹配**：复制内置屏逻辑尺寸、像素尺寸、缩放比例和刷新率。
-- **低延迟画面透传**：按显示器 ID 接收 `IOSurface`，使用 Metal 显示，不经过图像编码。
-- **完整键鼠操作**：目标应用保持前台，普通键盘和鼠标输入继续由系统投递。
-- **输入安全层**：隔离虚拟屏边界，拦截常见 Dock 唤出路径，并提供强制退出快捷键。
-- **本地运行**：没有网络请求、账号系统、遥测或画面上传。
+- **Interactive window selection**: hover a window to show a blue outline, then click to select it.
+- **Native fullscreen migration**: move the target window to a virtual display and trigger macOS native fullscreen.
+- **Retina display matching**: copy the built-in display's logical size, pixel size, scale factor, and refresh rate.
+- **Low-latency image pass-through**: receive `IOSurface` frames by display ID and render them with Metal, without video encoding.
+- **Normal keyboard and mouse input**: the target app remains frontmost, and regular input continues to be delivered by the system.
+- **Input safety layer**: isolate the virtual display boundary, block common Dock reveal paths, and provide a forced-exit shortcut.
+- **Local-only operation**: no network requests, account system, telemetry, or screen upload path.
 
-## 工作原理
+## How it works
 
 ```mermaid
 flowchart LR
-    A["悬停并选择窗口"] --> B["创建匹配内置屏的虚拟显示器"]
-    B --> C["移动窗口并进入原生全屏"]
-    C --> D["CGDisplayStream 输出 IOSurface"]
-    D --> E["Metal 显示到内置屏"]
-    E --> F["键鼠继续作用于目标应用"]
+    A["Hover and select a window"] --> B["Create a virtual display matching the built-in panel"]
+    B --> C["Move the window and enter native fullscreen"]
+    C --> D["CGDisplayStream outputs IOSurface frames"]
+    D --> E["Render back to the built-in display with Metal"]
+    E --> F["Keyboard and mouse input keep targeting the app"]
 ```
 
-程序不会把目标应用重新绘制到自己的 UI 中。窗口仍由原应用和 WindowServer 管理；MacNotchKiller 只负责虚拟显示器生命周期、画面透传和输入边界保护。详细设计见 [架构说明](docs/ARCHITECTURE.md)。
+The app does not redraw the target application's UI. The window is still owned by the original app and managed by WindowServer; MacNotchKiller only manages the virtual display lifecycle, image pass-through, and input boundaries. See [Architecture](docs/ARCHITECTURE.md) for details.
 
-## 系统要求
+## Requirements
 
-- 带刘海的 Apple Silicon MacBook
-- macOS 13 或更高版本
-- Swift 5.10 或更高版本工具链（从源码构建）
-- 为运行程序的终端或应用授予“辅助功能”权限
+- A notched Apple Silicon MacBook
+- macOS 13 or later
+- Swift 5.10 or later when building from source
+- Accessibility permission for the terminal or app that runs MacNotchKiller
 
-当前主要验证环境为 macOS 26.5.1。其他系统版本可能因为私有 API 行为变化而无法运行。
+The primary validation environment is macOS 26.5.1. Other macOS versions may fail because this project depends on private and deprecated display APIs.
 
-## 快速开始
+## Quick start
 
 ```bash
 git clone https://github.com/DTW7607/MacNotchKiller.git
@@ -64,75 +66,75 @@ swift build -c release
 .build/release/MacNotchKiller
 ```
 
-首次运行时，在以下位置允许终端或 `MacNotchKiller` 控制键盘和鼠标，然后重新启动程序：
+On first launch, allow the terminal or `MacNotchKiller` to control the keyboard and mouse, then restart the app:
 
 ```text
-系统设置 → 隐私与安全性 → 辅助功能
+System Settings → Privacy & Security → Accessibility
 ```
 
-## 使用方法
+## Usage
 
-1. 启动需要全屏显示的应用，并保持目标窗口可见。
-2. 运行 MacNotchKiller。
-3. 移动鼠标；可选窗口会出现蓝色外框。
-4. 点击目标窗口。确认点击会被拦截，不会误触窗口内控件。
-5. 程序创建虚拟屏、迁移窗口并显示完整画面。
+1. Open the app you want to use in fullscreen and keep its target window visible.
+2. Run MacNotchKiller.
+3. Move the mouse; selectable windows are highlighted with a blue outline.
+4. Click the target window. The confirmation click is intercepted, so it will not activate controls inside the target window.
+5. MacNotchKiller creates the virtual display, migrates the window, and shows the complete fullscreen image.
 
-按 `Control + Option + Command + Q` 可解除鼠标限制、销毁虚拟屏并退出 MacNotchKiller。
+Press `Control + Option + Command + Q` to remove mouse restrictions, destroy the virtual display, and quit MacNotchKiller.
 
-> 普通 `Command + Q` 会发送给当前目标应用，而不是退出 MacNotchKiller。
+> Regular `Command + Q` is delivered to the target app, not to MacNotchKiller.
 
-## 退出与故障恢复
+## Exit and recovery
 
-如果目标应用或显示服务行为异常，优先使用：
+If the target app or display service behaves unexpectedly, use:
 
 ```text
 Control + Option + Command + Q
 ```
 
-也可以从启动程序的终端发送 `Control + C`。正常退出会停止画面流、恢复光标位置并销毁虚拟显示器。
+You can also send `Control + C` from the terminal that launched the app. A normal exit stops the display stream, restores the cursor position, and destroys the virtual display.
 
-## 技术实现
+## Technical implementation
 
-| 层级 | 实现 |
+| Layer | Implementation |
 | --- | --- |
-| 窗口选择与控制 | AppKit、Accessibility API、`CGWindowList` |
-| 虚拟显示器 | 私有运行时类 `CGVirtualDisplay` |
-| 显示器布局 | CoreGraphics Display Configuration |
-| 画面获取 | `CGDisplayStream`、`IOSurface` |
-| 画面显示 | Metal、`CAMetalLayer` |
-| 输入保护 | HID Event Tap、CoreGraphics 光标 API |
+| Window selection and control | AppKit, Accessibility API, `CGWindowList` |
+| Virtual display | Private runtime class `CGVirtualDisplay` |
+| Display layout | CoreGraphics Display Configuration |
+| Frame capture | `CGDisplayStream`, `IOSurface` |
+| Rendering | Metal, `CAMetalLayer` |
+| Input protection | HID Event Tap, CoreGraphics cursor APIs |
 
-## 权限与隐私
+## Permissions and privacy
 
-- 辅助功能权限用于选择、移动目标窗口以及建立全局输入保护层。
-- 所有画面和输入都在本机处理，代码中没有网络传输路径。
-- `CGDisplayStream` 是否触发系统录屏权限或隐私标识由当前 macOS 的 WindowServer/TCC 策略决定，程序无法绕过或关闭系统提示。
+- Accessibility permission is used to select and move the target window and to install the global input safety layer.
+- All image and input handling stays on the local machine. The codebase contains no network transmission path.
+- Whether `CGDisplayStream` triggers macOS screen recording permission or privacy indicators is controlled by WindowServer and TCC policy. The app cannot bypass or hide those system indicators.
 
-## 已知限制
+## Known limitations
 
-- `CGVirtualDisplay` 是 Apple 私有 API，可能随 macOS 更新失效，不适合提交 Mac App Store。
-- `CGDisplayStream` 从 macOS 14 起弃用，并在 macOS 15 SDK 中标记为 obsolete；未来版本可能彻底移除运行时符号。
-- 运行期间屏幕右上角可能出现系统录屏提示，目前无法由应用侧消除。
-- 当前仅处理一个目标窗口和一个内置显示器。
-- 部分应用不允许 Accessibility API 移动窗口或控制原生全屏。
-- 显示器重排、Space 切换和 Dock 行为受 WindowServer 版本影响。
-- 项目处于实验阶段，使用前请保存目标应用中的重要工作。
+- `CGVirtualDisplay` is an Apple private API. It may break across macOS updates and is not suitable for Mac App Store distribution.
+- `CGDisplayStream` is deprecated since macOS 14 and marked obsolete in the macOS 15 SDK. Future macOS versions may remove the runtime symbols entirely.
+- macOS may show a system screen-recording indicator in the upper-right corner while the app is running. MacNotchKiller cannot remove it.
+- Only one target window and one built-in display are currently handled.
+- Some apps do not allow Accessibility API window movement or native fullscreen control.
+- Display arrangement, Space switching, and Dock behavior depend on the WindowServer version.
+- This project is experimental. Save important work in the target app before use.
 
-## 构建与验证
+## Build and validation
 
 ```bash
-# 调试构建
+# Debug build
 swift build
 
-# 发布构建
+# Release build
 swift build -c release
 ```
 
-提交代码前请确认构建通过，并且没有把 `.build/`、签名文件、配置文件或本机日志加入版本控制。参见 [贡献指南](CONTRIBUTING.md)。
+Before submitting changes, verify that the project builds and that `.build/`, signing material, local configuration, and local logs are not added to version control. See [Contributing](CONTRIBUTING.md).
 
-## 项目状态
+## Project status
 
-当前项目用于验证“虚拟显示器 + 直接显示流 + 输入隔离”这条技术路线。欢迎提交可复现的问题、兼容性结果和改进方案。
+This project validates a technical path based on a virtual display, direct display stream, and input isolation. Reproducible issues, compatibility reports, and implementation improvements are welcome.
 
-本仓库暂未声明开源许可证。公开可见不代表自动授予复制、修改或再分发权限。
+This repository does not currently declare an open-source license. Public visibility does not automatically grant permission to copy, modify, or redistribute the code.

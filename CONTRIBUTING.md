@@ -1,12 +1,14 @@
-# 贡献指南
+# Contributing
 
-感谢你改进 MacNotchKiller。这个项目依赖 macOS 私有显示接口，提交问题或代码时，请尽量提供可复现、可验证的信息。
+Thanks for improving MacNotchKiller. This project depends on private macOS display APIs, so issues and patches should be reproducible and grounded in real behavior.
 
-## 开发环境
+[简体中文](CONTRIBUTING.zh-CN.md)
 
-- macOS 13 或更高版本
+## Development environment
+
+- macOS 13 or later
 - Apple Silicon Mac
-- Swift 5.10 或更高版本工具链
+- Swift 5.10 or later
 
 ```bash
 git clone https://github.com/DTW7607/MacNotchKiller.git
@@ -14,28 +16,28 @@ cd MacNotchKiller
 swift build
 ```
 
-## 提交问题
+## Reporting issues
 
-请使用仓库的 Bug Report 模板，并至少提供：
+Use the repository's Bug Report template. Include at least:
 
-- Mac 型号和芯片
-- macOS 完整版本号
-- 目标应用及其版本
-- 是否已授予辅助功能权限
-- 可稳定复现的操作步骤
-- 完整错误文本或终端日志
+- Mac model and chip
+- Full macOS version
+- Target app and version
+- Whether Accessibility permission has been granted
+- Stable reproduction steps
+- Complete error text or terminal logs
 
-显示器排列和输入问题请同时说明外接显示器数量及排列方式。
+For display arrangement or input issues, also include the number of external displays and how they are arranged.
 
-## 提交代码
+## Submitting code
 
-1. 从 `main` 创建短期功能分支。
-2. 保持改动范围集中，不混入构建缓存或本机配置。
-3. 对生命周期、坐标系、Event Tap 和异步回调的改动补充必要注释。
-4. 执行 `swift build` 和 `swift build -c release`。
-5. 在 Pull Request 中说明验证环境、预期行为和已知风险。
+1. Create a short-lived feature branch from `main`.
+2. Keep the change focused, and do not include build caches or local configuration.
+3. Add comments where lifecycle, coordinate systems, Event Tap behavior, or async callbacks are non-obvious.
+4. Run `swift build` and `swift build -c release`.
+5. In the pull request, describe the validation environment, expected behavior, and known risks.
 
-建议使用 Conventional Commits：
+Use Conventional Commits when practical:
 
 ```text
 feat(selection): add interactive window highlighting
@@ -43,10 +45,10 @@ fix(display): wait for virtual display registration before positioning
 docs: document permissions and recovery shortcut
 ```
 
-## 工程约束
+## Engineering constraints
 
-- 不提交 `.build/` 或其他生成物。
-- 不直接链接私有类符号；私有 API 必须继续通过窄桥接层和运行时检测访问。
-- 不削弱 `Control + Option + Command + Q` 故障退出路径。
-- 不把真实设备上的成功结果等同于其他 macOS 版本兼容。
-- 不添加遥测、网络请求或画面上传行为，除非经过单独讨论并默认关闭。
+- Do not commit `.build/` or other generated files.
+- Do not directly link private class symbols. Private API access must remain behind the narrow bridge layer and runtime checks.
+- Do not weaken the `Control + Option + Command + Q` recovery path.
+- Do not treat success on one real device as proof of compatibility across macOS versions.
+- Do not add telemetry, network requests, or screen upload behavior unless discussed separately and disabled by default.

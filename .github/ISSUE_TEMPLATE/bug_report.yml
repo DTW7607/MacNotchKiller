@@ -1,69 +1,69 @@
 name: Bug Report
-description: 报告可复现的显示、窗口选择、输入或兼容性问题
+description: Report a reproducible display, window selection, input, or compatibility issue
 title: "[Bug] "
 labels: [bug]
 body:
   - type: checkboxes
     attributes:
-      label: 提交前检查
+      label: Pre-flight checks
       options:
-        - label: 我已搜索现有 Issue，没有找到相同问题。
+        - label: I have searched existing issues and did not find the same problem.
           required: true
-        - label: 我已保存目标应用中的重要工作，并了解项目使用私有 macOS API。
+        - label: I have saved important work in the target app and understand that this project uses private macOS APIs.
           required: true
 
   - type: input
     attributes:
-      label: Mac 型号与芯片
-      placeholder: 例如 MacBook Pro 14-inch, M4 Pro
+      label: Mac model and chip
+      placeholder: "Example: MacBook Pro 14-inch, M4 Pro"
     validations:
       required: true
 
   - type: input
     attributes:
-      label: macOS 版本
-      placeholder: 例如 macOS 26.5.1
+      label: macOS version
+      placeholder: "Example: macOS 26.5.1"
     validations:
       required: true
 
   - type: input
     attributes:
-      label: 目标应用
-      placeholder: 应用名称与版本
+      label: Target app
+      placeholder: App name and version
     validations:
       required: true
 
   - type: dropdown
     attributes:
-      label: 辅助功能权限
+      label: Accessibility permission
       options:
-        - 已授权
-        - 未授权
-        - 不确定
+        - Granted
+        - Not granted
+        - Unsure
     validations:
       required: true
 
   - type: textarea
     attributes:
-      label: 复现步骤
-      placeholder: 请按顺序描述从启动程序到问题出现的操作。
+      label: Reproduction steps
+      placeholder: Describe the exact steps from launching MacNotchKiller to seeing the issue.
     validations:
       required: true
 
   - type: textarea
     attributes:
-      label: 预期行为
+      label: Expected behavior
     validations:
       required: true
 
   - type: textarea
     attributes:
-      label: 实际行为与完整错误文本
+      label: Actual behavior and complete error text
     validations:
       required: true
 
   - type: textarea
     attributes:
-      label: 显示器环境与补充日志
-      description: 请说明外接显示器数量、排列方式，并粘贴终端日志。
+      label: Display setup and additional logs
+      description: Include the number of external displays, their arrangement, and terminal logs.
       render: shell
