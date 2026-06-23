@@ -1,6 +1,6 @@
 # 贡献指南
 
-感谢你改进 FullScreenTools。这个项目依赖 macOS 私有显示接口，提交问题或代码时，请尽量提供可复现、可验证的信息。
+感谢你改进 MacNotchKiller。这个项目依赖 macOS 私有显示接口，提交问题或代码时，请尽量提供可复现、可验证的信息。
 
 ## 开发环境
 
@@ -9,8 +9,8 @@
 - Swift 5.10 或更高版本工具链
 
 ```bash
-git clone https://github.com/DTW7607/FullScreenTools.git
-cd FullScreenTools
+git clone https://github.com/DTW7607/MacNotchKiller.git
+cd MacNotchKiller
 swift build
 ```
 

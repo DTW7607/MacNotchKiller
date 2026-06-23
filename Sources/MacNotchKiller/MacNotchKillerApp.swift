@@ -1,7 +1,7 @@
 import AppKit
 
 @main
-enum FullScreenToolsApp {
+enum MacNotchKillerApp {
     @MainActor
     static func main() {
         let application = NSApplication.shared

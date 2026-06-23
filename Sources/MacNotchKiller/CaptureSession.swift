@@ -34,7 +34,7 @@ final class CaptureSession: NSObject {
     weak var delegate: CaptureSessionDelegate?
 
     private let outputQueue = DispatchQueue(
-        label: "FullScreenTools.display-surface",
+        label: "MacNotchKiller.display-surface",
         qos: .userInteractive
     )
     private weak var captureView: CaptureView?

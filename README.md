@@ -1,10 +1,10 @@
 <div align="center">
 
-# FullScreenTools
+# MacNotchKiller
 
 **让带刘海的 MacBook 真正用满整块屏幕。**
 
-一个面向 macOS 的实验性全屏工具：把选中的应用迁移到隔离虚拟屏，并将完整画面低延迟透传回内置屏幕，让观影、虚拟机和其他全屏应用能够使用刘海两侧区域。
+一个面向带刘海 MacBook 的实验性全屏工具：把选中的应用迁移到隔离虚拟屏，并将完整画面低延迟透传回内置屏幕，让观影、虚拟机和其他全屏应用能够真正用满刘海两侧区域。
 
 ![macOS 13+](https://img.shields.io/badge/macOS-13%2B-111111?logo=apple)
 ![Apple Silicon](https://img.shields.io/badge/Apple%20Silicon-required-111111)
@@ -13,7 +13,7 @@
 
 </div>
 
-![Parallels Desktop 虚拟机使用 FullScreenTools 后占满刘海屏](docs/images/parallels-desktop-fullscreen.jpg)
+![Parallels Desktop 虚拟机使用 MacNotchKiller 后占满刘海屏](docs/images/parallels-desktop-fullscreen.jpg)
 
 <p align="center"><em>Parallels Desktop 虚拟机全屏示例：Windows 桌面延伸至刘海两侧，不再整体下移。</em></p>
 
@@ -21,7 +21,7 @@
 
 macOS 会为内置摄像头区域保留安全空间。部分播放器、虚拟机和图形应用进入系统全屏后，内容仍会避开刘海所在的顶部区域，导致两侧像素无法参与显示。
 
-FullScreenTools 不修改目标应用。它创建一个与内置 Retina 屏匹配的虚拟显示器，让目标窗口在虚拟屏上进入原生全屏，再把虚拟屏的完整合成画面显示到内置屏上。这样既保留目标应用原有的全屏布局和键鼠行为，也能使用刘海两侧区域。
+MacNotchKiller 不修改目标应用。它创建一个与内置 Retina 屏匹配的虚拟显示器，让目标窗口在虚拟屏上进入原生全屏，再把虚拟屏的完整合成画面显示到内置屏上。这样既保留目标应用原有的全屏布局和键鼠行为，也能使用刘海两侧区域。
 
 ## 主要能力
 
@@ -44,7 +44,7 @@ flowchart LR
     E --> F["键鼠继续作用于目标应用"]
 ```
 
-程序不会把目标应用重新绘制到自己的 UI 中。窗口仍由原应用和 WindowServer 管理；FullScreenTools 只负责虚拟显示器生命周期、画面透传和输入边界保护。详细设计见 [架构说明](docs/ARCHITECTURE.md)。
+程序不会把目标应用重新绘制到自己的 UI 中。窗口仍由原应用和 WindowServer 管理；MacNotchKiller 只负责虚拟显示器生命周期、画面透传和输入边界保护。详细设计见 [架构说明](docs/ARCHITECTURE.md)。
 
 ## 系统要求
 
@@ -58,13 +58,13 @@ flowchart LR
 ## 快速开始
 
 ```bash
-git clone https://github.com/DTW7607/FullScreenTools.git
-cd FullScreenTools
+git clone https://github.com/DTW7607/MacNotchKiller.git
+cd MacNotchKiller
 swift build -c release
-.build/release/FullScreenTools
+.build/release/MacNotchKiller
 ```
 
-首次运行时，在以下位置允许终端或 `FullScreenTools` 控制键盘和鼠标，然后重新启动程序：
+首次运行时，在以下位置允许终端或 `MacNotchKiller` 控制键盘和鼠标，然后重新启动程序：
 
 ```text
 系统设置 → 隐私与安全性 → 辅助功能
@@ -73,14 +73,14 @@ swift build -c release
 ## 使用方法
 
 1. 启动需要全屏显示的应用，并保持目标窗口可见。
-2. 运行 FullScreenTools。
+2. 运行 MacNotchKiller。
 3. 移动鼠标；可选窗口会出现蓝色外框。
 4. 点击目标窗口。确认点击会被拦截，不会误触窗口内控件。
 5. 程序创建虚拟屏、迁移窗口并显示完整画面。
 
-按 `Control + Option + Command + Q` 可解除鼠标限制、销毁虚拟屏并退出 FullScreenTools。
+按 `Control + Option + Command + Q` 可解除鼠标限制、销毁虚拟屏并退出 MacNotchKiller。
 
-> 普通 `Command + Q` 会发送给当前目标应用，而不是退出 FullScreenTools。
+> 普通 `Command + Q` 会发送给当前目标应用，而不是退出 MacNotchKiller。
 
 ## 退出与故障恢复
 

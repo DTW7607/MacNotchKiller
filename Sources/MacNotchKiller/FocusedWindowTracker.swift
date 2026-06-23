@@ -292,7 +292,7 @@ enum FocusedWindowError: LocalizedError {
         case .noFocusedWindow:
             return "没有选择可移动的窗口。"
         case .selectionMonitorUnavailable:
-            return "无法启动全局窗口选择器。请确认 FullScreenTools 已获得辅助功能权限。"
+            return "无法启动全局窗口选择器。请确认 MacNotchKiller 已获得辅助功能权限。"
         case .selectionCancelled:
             return "窗口选择已取消。"
         case .invalidTargetDisplay:

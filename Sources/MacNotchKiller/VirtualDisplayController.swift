@@ -45,7 +45,7 @@ final class VirtualDisplayController {
         let display: FSTVirtualDisplay
         do {
             display = try FSTVirtualDisplay(
-                name: "FullScreenTools Virtual Display",
+                name: "MacNotchKiller Virtual Display",
                 pixelWidth: UInt32(profile.pixelWidth),
                 pixelHeight: UInt32(profile.pixelHeight),
                 logicalWidth: UInt32(profile.logicalWidth),

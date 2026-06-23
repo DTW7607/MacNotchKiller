@@ -3,12 +3,12 @@
 import PackageDescription
 
 let package = Package(
-    name: "FullScreenTools",
+    name: "MacNotchKiller",
     platforms: [
         .macOS(.v13)
     ],
     products: [
-        .executable(name: "FullScreenTools", targets: ["FullScreenTools"])
+        .executable(name: "MacNotchKiller", targets: ["MacNotchKiller"])
     ],
     targets: [
         .target(
@@ -24,7 +24,7 @@ let package = Package(
             ]
         ),
         .executableTarget(
-            name: "FullScreenTools",
+            name: "MacNotchKiller",
             dependencies: ["VirtualDisplayBridge"],
             linkerSettings: [
                 .linkedFramework("CoreGraphics"),

@@ -64,7 +64,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
         let applicationMenu = NSMenu()
         let quitItem = NSMenuItem(
-            title: "退出 FullScreenTools",
+            title: "退出 MacNotchKiller",
             action: #selector(quit),
             keyEquivalent: "q"
         )
@@ -106,7 +106,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         guard InputRouter.requestAccessibilityPermission() else {
             showErrorAndTerminate(
                 title: "需要辅助功能权限",
-                message: "完整键鼠透传需要全局输入权限。请在“系统设置 → 隐私与安全性 → 辅助功能”中允许终端或 FullScreenTools，然后重新运行程序。"
+                message: "完整键鼠透传需要全局输入权限。请在“系统设置 → 隐私与安全性 → 辅助功能”中允许终端或 MacNotchKiller，然后重新运行程序。"
             )
             return
         }

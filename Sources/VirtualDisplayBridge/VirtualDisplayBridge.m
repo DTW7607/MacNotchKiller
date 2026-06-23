@@ -4,7 +4,7 @@
 #import <objc/message.h>
 #import <objc/runtime.h>
 
-static NSString *const FSTVirtualDisplayErrorDomain = @"FullScreenTools.VirtualDisplay";
+static NSString *const FSTVirtualDisplayErrorDomain = @"MacNotchKiller.VirtualDisplay";
 
 typedef NS_ENUM(NSInteger, FSTVirtualDisplayErrorCode) {
     FSTVirtualDisplayErrorUnsupported = 1,
@@ -28,7 +28,7 @@ static NSError *FSTMakeError(FSTVirtualDisplayErrorCode code, NSString *message)
 
 @end
 
-static NSString *const FSTDisplayStreamErrorDomain = @"FullScreenTools.DisplayStream";
+static NSString *const FSTDisplayStreamErrorDomain = @"MacNotchKiller.DisplayStream";
 
 typedef NS_ENUM(NSInteger, FSTDisplayStreamErrorCode) {
     FSTDisplayStreamErrorUnsupported = 1,
