@@ -1,0 +1,23 @@
+# Swift Package Manager
+.build/
+.swiftpm/
+Package.resolved
+
+# Xcode
+DerivedData/
+*.xcuserstate
+xcuserdata/
+
+# macOS
+.DS_Store
+
+# Local configuration and logs
+.env
+.env.*
+*.log
+*.trace
+
+# Signing material
+*.cer
+*.p12
+*.mobileprovision
